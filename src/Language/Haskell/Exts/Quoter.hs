@@ -7,20 +7,33 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Language.Haskell.Exts.Quoter
-  ( qe, qp, qt, qd
-  , qModule, qDecl, qStmt, qCon, qCons, qField, qFields, qModuleName
+  (
+  -- * Short quasiquoters
+    qe, qp, qt, qd
+  -- * AST Quaiquoters
+  , qModule
+  , qExp
+  , qPat
+  , qType
+  , qDecl
+  , qDecls
+  , qStmt
+  , qStmts
+  , qCon
+  , qCons
+  , qField
+  , qFields
+  , qModuleName
+  -- * Conversion Utilities
   , toExp, toPat, toType, toQName, toName
   ) where
 
 import Control.Applicative        ( (<$>) )
-import Control.Monad              ( (<=<) )
 import Control.Monad.Trans.Class  ( lift )
 import Control.Monad.Trans.Either ( EitherT(..), hoistEither )
 import Data.Char                  ( isSpace, isUpper )
 import Data.Either                ( rights )
-import Data.Generics              ( Data, typeOf, gfindtype, everywhereBut, extQ
-                                  , extT
-                                  )
+import Data.Generics              ( Data, everywhereBut, extQ, extT )
 import Data.Text                  ( Text, unpack )
 import Text.Themplates            ( Chunk, substSplices, parseSplices
                                   , curlySplice, generateNames, dedentQuote
@@ -45,28 +58,33 @@ debug x = trace (show x) x
  * Remove haskell-src-meta dependency by using syntax-trees or using simpler
    antiquotes.
  * Don't reparse puns for default splices
- * Type synonym for 'Field' and 'Con'
  -}
 
 -- Versions of the classic TH quasi-quoters.
 
 qe, qp, qt, qd :: TH.QuasiQuoter
-qe = astQuoter "Exp"  parseExp
-qp = astQuoter "Pat"  parsePat
-qt = astQuoter "Type" parseType
-qd = astQuoter "Decs" parseDecls
+qe = astQuoter "qe" (extsParse :: EParser Exts.Exp)
+qp = astQuoter "qp" (extsParse :: EParser Exts.Pat)
+qt = astQuoter "qt" (extsParse :: EParser Exts.Type)
+qd = astQuoter "qd" (extsParse :: EParser [Exts.Decl])
 
 -- Quasi-quoters for other types
 
-qModule, qDecl, qStmt, qCon, qCons, qField, qFields, qModuleName :: TH.QuasiQuoter
-qModule     = astQuoter "qModule"     parseModule
-qDecl       = astQuoter "qDecl"       parseDecl
-qStmt       = astQuoter "qStmt"       parseStmt
-qCon        = astQuoter "qCon"        parseCon
-qCons       = astQuoter "qCons"       parseCons
-qField      = astQuoter "qField"      parseField
-qFields     = astQuoter "qFields"     parseFields
-qModuleName = astQuoter "qModuleName" parseModuleName
+qModule, qExp, qPat, qType, qDecl, qDecls, qStmt, qStmts, qCon, qCons, qField,
+  qFields, qModuleName :: TH.QuasiQuoter
+qModule     = astQuoter "qModule"     (extsParse :: EParser Exts.Module)
+qExp        = astQuoter "qExp"        (extsParse :: EParser Exts.Exp)
+qPat        = astQuoter "qPat"        (extsParse :: EParser Exts.Pat)
+qType       = astQuoter "qType"       (extsParse :: EParser Exts.Type)
+qDecl       = astQuoter "qDecl"       (extsParse :: EParser Exts.Decl)
+qDecls      = astQuoter "qDecls"      (extsParse :: EParser [Exts.Decl])
+qStmt       = astQuoter "qStmt"       (extsParse :: EParser Exts.Stmt)
+qStmts      = astQuoter "qStmts"      (extsParse :: EParser [Exts.Stmt])
+qCon        = astQuoter "qCon"        (extsParse :: EParser Con)
+qCons       = astQuoter "qCons"       (extsParse :: EParser [Con])
+qField      = astQuoter "qFieldDecl"  (extsParse :: EParser FieldDecl)
+qFields     = astQuoter "qFieldDecls" (extsParse :: EParser [FieldDecl])
+qModuleName = astQuoter "qModuleName" (extsParse :: EParser Exts.ModuleName)
 
 class ToExp        a where toExp        :: a -> Exts.Exp
 class ToPat        a where toPat        :: a -> Exts.Pat
@@ -112,16 +130,16 @@ astQuoter name parser = TH.QuasiQuoter expr undefined undefined undefined
       _ -> lift $ mapM (fmap $ \(cvar, pun') -> (pun', conv cvar parsed)) results'
    where
     results' = rights results
-    results = [ fmap ('toExp, )        . lifter <$> parseExp        pun
-              , fmap ('toPat, )        . lifter <$> parsePat        pun
-              , fmap ('toType, )       . lifter <$> parseType       pun
-              , fmap ('toQName, )      . lifter <$> parseQName      pun
-              , fmap ('toName, )       . lifter <$> parseName       pun
-              , fmap ('toCons, )       . lifter <$> parseCons       pun
-              , fmap ('id, )           . lifter <$> parseFields     pun
-              , fmap ('id, )           . lifter <$> parseDecls      pun
-              , fmap ('id, )           . lifter <$> parseStmt       pun
-              , fmap ('toModuleName, ) . lifter <$> parseModuleName pun
+    results = [ fmap ('toExp, )        . lifter <$> (extsParse pun :: EError Exts.Exp)
+              , fmap ('toPat, )        . lifter <$> (extsParse pun :: EError Exts.Pat)
+              , fmap ('toType, )       . lifter <$> (extsParse pun :: EError Exts.Type)
+              , fmap ('toQName, )      . lifter <$> (extsParse pun :: EError Exts.QName)
+              , fmap ('toName, )       . lifter <$> (extsParse pun :: EError Exts.Name)
+              , fmap ('toCons, )       . lifter <$> (extsParse pun :: EError [Con])
+              , fmap ('id, )           . lifter <$> (extsParse pun :: EError [FieldDecl])
+              , fmap ('id, )           . lifter <$> (extsParse pun :: EError [Exts.Decl])
+              , fmap ('id, )           . lifter <$> (extsParse pun :: EError [Exts.Stmt])
+              , fmap ('toModuleName, ) . lifter <$> (extsParse pun :: EError Exts.ModuleName)
               ]
 
   expr :: String -> TH.ExpQ
@@ -195,7 +213,12 @@ parseChunks qq input = do
 
 type ErrorQ = EitherT String TH.Q
 
+type EError a = Either String a
 type EParser a = String -> Either String a
+
+--TODO: move these to HSE?
+type Con = Exts.QualConDecl
+type FieldDecl = ([Exts.Name], Exts.BangType)
 
 extsParse :: (Data a, Exts.Parseable a) => EParser a
 extsParse = mapRight deLoc . Meta.parseResultToEither . Exts.parseWithMode parseMode
@@ -203,7 +226,8 @@ extsParse = mapRight deLoc . Meta.parseResultToEither . Exts.parseWithMode parse
 -- | Parse mode with all extensions and no fixities.
 parseMode :: Exts.ParseMode
 parseMode = Exts.ParseMode
-  { Exts.parseFilename = ""
+  { Exts.baseLanguage = Exts.Haskell98
+  , Exts.parseFilename = ""
   , Exts.extensions = Exts.knownExtensions
   , Exts.ignoreLinePragmas = False
   , Exts.ignoreLanguagePragmas = False
@@ -217,66 +241,8 @@ deLoc = everywhereBut ignoreStrings (id `extT` const Exts.noLoc)
 ignoreStrings :: Data a => a -> Bool
 ignoreStrings = const False `extQ` (const True :: String -> Bool)
 
-parseModule :: EParser Exts.Module
-parseExp    :: EParser Exts.Exp
-parsePat    :: EParser Exts.Pat
-parseType   :: EParser Exts.Type
-parseDecl   :: EParser Exts.Decl
-parseStmt   :: EParser Exts.Stmt
-parseModule = extsParse
-parseExp    = extsParse
-parsePat    = extsParse
-parseType   = extsParse
-parseDecl   = extsParse
--- HSE Bug??
-parseStmt   = mapRight deLoc . Meta.parseResultToEither . Exts.parseStmtWithMode parseMode
-
---TODO: Consider making these "Parseable" instances
---TODO: Doing better than this would require exposing more parsers from HSE
-
-parseModuleName :: EParser Exts.ModuleName
-parseModuleName = getByType <=< parseModule . ("module " ++ ) . ( ++ " where\n")
-
-parseDecls :: EParser [Exts.Decl]
-parseDecls = getByType <=< parseModule . ("module M where\n" ++ )
-
-parseQName :: EParser Exts.QName
-parseQName = getByType <=< parseExp
-
-parseName :: EParser Exts.Name
-parseName = getByType <=< parseQName
-
-parseCons :: EParser [Exts.QualConDecl]
-parseCons = getByType <=< expectSingle <=< parseDecls . ("data X = " ++ )
-
-parseCon :: EParser Exts.QualConDecl
-parseCon = expectSingle <=< parseCons
-
-parseField :: EParser ([Exts.Name], Exts.BangType)
-parseField = expectSingle <=< parseFields . ("{ " ++ ) . ( ++ " }")
-
-parseFields :: EParser [([Exts.Name], Exts.BangType)]
-parseFields input = do
-  let preprocessed = "X " ++ input
-  con <- getByType =<< parseCon preprocessed
-  case con of
-    Exts.RecDecl _ fs -> Right fs
-    _ -> Left $ "Expected record syntax, but got " ++ preprocessed
-
-getByType :: forall a b. (Show a, Data a, Data b) => a -> Either String b
-getByType x =
-  case gfindtype x of
-    Just found -> Right found
-    Nothing -> Left $
-      "Failed to find just one " ++ show (typeOf (undefined :: b)) ++
-      " in the immediate fields of " ++ show x
-
-expectSingle :: Show a => [a] -> Either String a
-expectSingle [x] = Right x
-expectSingle xs = Left $ "Expected a single value, but got " ++ show xs
-
 parseThExp :: EParser TH.Exp
-parseThExp = mapRight Meta.toExp . parseExp
+parseThExp = mapRight Meta.toExp . (extsParse :: EParser Exts.Exp)
 {-
 parseThPat :: EParser TH.Pat
 parseThPat = mapRight Meta.toPat  . parsePat
@@ -285,7 +251,6 @@ parseThType = mapRight Meta.toType . parseType
 parseThDecs :: EParser [TH.Dec]
 parseThDecs = mapRight Meta.toDecs . parseDecs
 -}
-
 
 mapBoth :: (a -> c) -> (b -> d) -> Either a b -> Either c d
 mapBoth f g = either (Left . f) (Right . g)

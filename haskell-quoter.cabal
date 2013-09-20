@@ -1,0 +1,40 @@
+name:              haskell-quoter
+version:           0.0.0
+synopsis:          Powerful templating for haskell-src-exts ASTs
+description:       This package allows you to construct HSE ASTs similarly to
+                   Template Haskell's AST quotes (with haskell antiquotes),
+                   except without the restriction of only splicing expressions /
+                   patterns / types / declarations.  Hopefully soon, it will
+                   also allow you to pattern match on ASTs and work with TH
+                   ASTs.
+license:           BSD3
+license-file:      LICENSE
+author:            Michael Sloan
+maintainer:        Michael Sloan <mgsloan at gmail>
+homepage:          http://github.com/mgsloan/haskell-quoter
+bug-reports:       http://github.com/mgsloan/haskell-quoter/issues
+category:          Language, Template Haskell
+stability:         Experimental
+cabal-version:     >= 1.8
+build-type:        Simple
+source-repository head
+  type: git
+  location: git://github.com/mgsloan/haskell-quoter
+
+library
+    hs-source-dirs: src
+    ghc-options: -Wall
+    exposed-modules: Language.Haskell.Exts.Quoter
+
+    build-depends: base
+                 , containers
+                 , either
+                 , haskell-src-exts >= 0.15
+                 , haskell-src-meta
+                 , parsec
+                 , syb
+                 , template-haskell
+                 , text
+                 , themplates
+                 , th-lift
+                 , transformers

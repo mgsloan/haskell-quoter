@@ -6,7 +6,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-module Quasimodo.HSE
+module Language.Haskell.Exts.Quoter
   ( qe, qp, qt, qd
   , qModule, qDecl, qStmt, qCon, qCons, qField, qFields, qModuleName
   , toExp, toPat, toType, toQName, toName

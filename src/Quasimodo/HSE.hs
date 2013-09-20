@@ -4,74 +4,106 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Quasimodo.HSE
-  ( e', ec, p', pc, t', tc, d', dc
-  , toExp, toPat, toType
+  ( qe, qp, qt, qd
+  , qModule, qDecl, qStmt, qCon, qCons, qField, qFields, qModuleName
+  , toExp, toPat, toType, toQName, toName
   ) where
 
 import Control.Applicative        ( (<$>) )
+import Control.Monad              ( (<=<) )
 import Control.Monad.Trans.Class  ( lift )
 import Control.Monad.Trans.Either ( EitherT(..), hoistEither )
 import Data.Char                  ( isSpace, isUpper )
 import Data.Either                ( rights )
+import Data.Generics              ( Data, typeOf, gfindtype, everywhereBut, extQ
+                                  , extT
+                                  )
+import Data.Text                  ( Text, unpack )
 import Text.Themplates            ( Chunk, substSplices, parseSplices
-                                  , curlySplice, generateNames )
+                                  , curlySplice, generateNames, dedentQuote
+                                  )
 
-import qualified Language.Haskell.TH       as TH
-import qualified Language.Haskell.TH.Lift  as TH
-import qualified Language.Haskell.TH.Quote as TH
-import qualified Language.Haskell.Exts     as Exts
-import qualified Language.Haskell.Meta     as Meta
+import qualified Language.Haskell.TH          as TH
+import qualified Language.Haskell.TH.Lift     as TH
+import qualified Language.Haskell.TH.Quote    as TH
+import qualified Language.Haskell.Exts.SrcLoc as Exts
+import qualified Language.Haskell.Exts        as Exts
+import qualified Language.Haskell.Meta        as Meta
+
+{-
+import Data.Either ( lefts )
+import Debug.Trace
+
+debug x = trace (show x) x
+-}
 
 {- TODO:
  * Eeew - make this code prettier
  * Remove haskell-src-meta dependency by using syntax-trees or using simpler
    antiquotes.
+ * Don't reparse puns for default splices
+ * Type synonym for 'Field' and 'Con'
  -}
 
-e', ec, p', pc, t', tc, d', dc :: TH.QuasiQuoter
-e' = astQuoter False "Exp"  parseExp'
-ec = astQuoter True  "Exp"  parseExp'
+-- Versions of the classic TH quasi-quoters.
 
-p' = astQuoter False "Pat"  parsePat'
-pc = astQuoter True  "Pat"  parsePat'
+qe, qp, qt, qd :: TH.QuasiQuoter
+qe = astQuoter "Exp"  parseExp
+qp = astQuoter "Pat"  parsePat
+qt = astQuoter "Type" parseType
+qd = astQuoter "Decs" parseDecls
 
-t' = astQuoter False "Type" parseType'
-tc = astQuoter True  "Type" parseType'
+-- Quasi-quoters for other types
 
-d' = astQuoter False "Decs" parseDecs'
-dc = astQuoter True  "Decs" parseDecs'
+qModule, qDecl, qStmt, qCon, qCons, qField, qFields, qModuleName :: TH.QuasiQuoter
+qModule     = astQuoter "qModule"     parseModule
+qDecl       = astQuoter "qDecl"       parseDecl
+qStmt       = astQuoter "qStmt"       parseStmt
+qCon        = astQuoter "qCon"        parseCon
+qCons       = astQuoter "qCons"       parseCons
+qField      = astQuoter "qField"      parseField
+qFields     = astQuoter "qFields"     parseFields
+qModuleName = astQuoter "qModuleName" parseModuleName
 
-class ToExp      a where toExp      :: a -> Exts.Exp
-class ToPat      a where toPat      :: a -> Exts.Pat
-class ToType     a where toType     :: a -> Exts.Type
-class ToDecl     a where toDecl     :: a -> Exts.Decl
+class ToExp        a where toExp        :: a -> Exts.Exp
+class ToPat        a where toPat        :: a -> Exts.Pat
+class ToType       a where toType       :: a -> Exts.Type
+class ToDecl       a where toDecl       :: a -> Exts.Decl
+class ToQName      a where toQName      :: a -> Exts.QName
+class ToName       a where toName       :: a -> Exts.Name
+class ToModuleName a where toModuleName :: a -> Exts.ModuleName
+class ToCons       a where toCons       :: a -> [Exts.QualConDecl]
 
 -- | Builds a quoter for an AST, given a few configurations.  This is the
 --   function that is used to implement @e'@, @p'@, @t'@, and @d'@.
 astQuoter :: forall a. TH.Lift a
-          => Bool
-          -> String
-          -> (String -> Either String a)
-          -> TH.QuasiQuoter
-astQuoter use_conv name parser = TH.QuasiQuoter expr undefined undefined undefined
+          => String -> EParser a -> TH.QuasiQuoter
+astQuoter name parser = TH.QuasiQuoter expr undefined undefined undefined
  where
   errEitherT e = either fail return =<< runEitherT e
 
   parse_err :: String -> Either String b -> ErrorQ b
-  parse_err err = hoistEither . mapLeft (err ++)
+  parse_err err = hoistEither . mapLeft ((err ++ ": \n") ++ )
 
   parse_ast :: (b -> TH.Q c) -> ErrorQ b -> ErrorQ c
   parse_ast lifter p = lift . lifter =<< p
 
-  parse_splice :: (forall b. TH.Lift b => b -> TH.Q c)
+  parse_splice :: Show c =>
+                  (forall b. TH.Lift b => b -> TH.Q c)
                -> (TH.Name -> c -> c)
                -> (String -> ErrorQ c)
                -> (String, String)
                -> ErrorQ [(c, c)]
   parse_splice lifter conv p (pun, code) = do
     parsed <- p code
+    {-
+    lift $ do
+      _ <- TH.runIO $ mapM print $ lefts results
+      mapM_ (TH.runIO . print =<<) results'
+    -}
     case results' of
       [] -> hoistEither
           $ Left $  "Parse error in fancy splice's pun expression: "
@@ -80,26 +112,36 @@ astQuoter use_conv name parser = TH.QuasiQuoter expr undefined undefined undefin
       _ -> lift $ mapM (fmap $ \(cvar, pun') -> (pun', conv cvar parsed)) results'
    where
     results' = rights results
-    results = [ fmap ('toExp, )  . lifter <$> parseExp'  pun
-              , fmap ('toPat, )  . lifter <$> parsePat'  pun
-              , fmap ('toType, ) . lifter <$> parseType' pun
+    results = [ fmap ('toExp, )        . lifter <$> parseExp        pun
+              , fmap ('toPat, )        . lifter <$> parsePat        pun
+              , fmap ('toType, )       . lifter <$> parseType       pun
+              , fmap ('toQName, )      . lifter <$> parseQName      pun
+              , fmap ('toName, )       . lifter <$> parseName       pun
+              , fmap ('toCons, )       . lifter <$> parseCons       pun
+              , fmap ('id, )           . lifter <$> parseFields     pun
+              , fmap ('id, )           . lifter <$> parseDecls      pun
+              , fmap ('id, )           . lifter <$> parseStmt       pun
+              , fmap ('toModuleName, ) . lifter <$> parseModuleName pun
               ]
 
   expr :: String -> TH.ExpQ
   expr input = errEitherT $ do
-    (chunks, free) <- parseAst input
+    (chunks, free) <- parseChunks name input
     spliced <- substSplices fst ast_p splice_p chunks
     return $ if null free
              then spliced
              else TH.LamE (map (TH.VarP . TH.mkName) free) spliced
    where
-    ast_p    = parse_ast TH.lift
-             . parse_err ("Parse error in pun-substituted " ++ name ++ " AST literal")
-             . parser
-    splice_p = parse_splice TH.lift (\v e -> if use_conv then TH.AppE (TH.VarE v) e else e)
-             ( parse_err ("Parse error in " ++ name ++ " AST literal splice")
-             . parseExp
-             )
+    ast_p code
+      = parse_ast ({- fmap debug . -} TH.lift)
+      . parse_err ("Parse error in pun-substituted " ++ name ++ " AST literal:\n" ++ code)
+      $ parser code
+    splice_p splice
+      = parse_splice TH.lift (\v -> TH.AppE (TH.VarE v))
+        ( parse_err ("Parse error in " ++ name ++ " AST literal splice:\n" ++ show splice)
+        . parseThExp
+        )
+        splice
 
   {-
   pat :: String -> Q Pat
@@ -112,7 +154,7 @@ astQuoter use_conv name parser = TH.QuasiQuoter expr undefined undefined undefin
              . parser
     splice_p = parse_splice lifter (\v p -> if use_conv then ViewP v p else p)
              ( parse_err ("Parse error in " ++ name ++ " AST match splice")
-             . parsePat
+             . parseThPat
              )
     lifter x = pat_exp <$> TH.lift x
     pat_exp = expToPatMap . M.fromList
@@ -124,12 +166,14 @@ astQuoter use_conv name parser = TH.QuasiQuoter expr undefined undefined undefin
     prefix_all pre = map ((pre++) *** (pre++))
   -}
 
-type AstChunk = Chunk String (String, String)
-
-parseAst :: Monad m => String -> EitherT String m ([AstChunk], [String])
-parseAst input = do
-  chunks <- hoistEither $ parseSplices curlySplice input
-  let named = zipWith giveName (generateNames "s" input) chunks
+parseChunks
+  :: Monad m
+  => String
+  -> String
+  -> EitherT String m ([Chunk String (String, String)], [String])
+parseChunks qq input = do
+  chunks <- hoistEither $ parseSplices curlySplice =<< dedentQuote qq input
+  let named = zipWith giveName (generateNames "S" input) chunks
 
   return ( map processEmpty named
          , [x | s@(Right (x, _)) <- named, isEmpty s]
@@ -151,45 +195,97 @@ parseAst input = do
 
 type ErrorQ = EitherT String TH.Q
 
-parseExp'  :: String -> Either String Exts.Exp
-parseExp'  = Meta.parseResultToEither
-          . Exts.parseExpWithMode  parseMode
-parsePat'  :: String -> Either String Exts.Pat
-parsePat'  = Meta.parseResultToEither
-          . Exts.parsePatWithMode  parseMode
-parseType' :: String -> Either String Exts.Type
-parseType' = Meta.parseResultToEither
-          . Exts.parseTypeWithMode parseMode
-parseDecs' :: String -> Either String [Exts.Decl]
-parseDecs' = mapRight (\(Exts.Module _ _ _ _ _ _ x) -> x)
-          . Meta.parseResultToEither
-          . Exts.parseModuleWithMode parseMode
-          . ("module Dummy where\n" ++)
+type EParser a = String -> Either String a
 
-parseExp  :: String -> Either String TH.Exp
-parseExp  = mapRight Meta.toExp  . Meta.parseResultToEither
-          . Exts.parseExpWithMode  parseMode
-parsePat  :: String -> Either String TH.Pat
-parsePat  = mapRight Meta.toPat  . Meta.parseResultToEither
-          . Exts.parsePatWithMode  parseMode
-parseType :: String -> Either String TH.Type
-parseType = mapRight Meta.toType . Meta.parseResultToEither
-          . Exts.parseTypeWithMode parseMode
-parseDecs :: String -> Either String [TH.Dec]
-parseDecs = mapRight (\(Exts.Module _ _ _ _ _ _ x) -> Meta.toDecs x)
-          . Meta.parseResultToEither
-          . Exts.parseModuleWithMode parseMode
-          . ("module Dummy where\n" ++)
+extsParse :: (Data a, Exts.Parseable a) => EParser a
+extsParse = mapRight deLoc . Meta.parseResultToEither . Exts.parseWithMode parseMode
 
 -- | Parse mode with all extensions and no fixities.
 parseMode :: Exts.ParseMode
 parseMode = Exts.ParseMode
   { Exts.parseFilename = ""
-  , Exts.extensions = Exts.glasgowExts ++ [Exts.TupleSections, Exts.BangPatterns, Exts.ViewPatterns]
+  , Exts.extensions = Exts.knownExtensions
   , Exts.ignoreLinePragmas = False
   , Exts.ignoreLanguagePragmas = False
   , Exts.fixities = Nothing
   }
+
+deLoc :: Data a => a -> a
+deLoc = everywhereBut ignoreStrings (id `extT` const Exts.noLoc)
+
+-- | Used for SYB optimization: don't recurse down strings
+ignoreStrings :: Data a => a -> Bool
+ignoreStrings = const False `extQ` (const True :: String -> Bool)
+
+parseModule :: EParser Exts.Module
+parseExp    :: EParser Exts.Exp
+parsePat    :: EParser Exts.Pat
+parseType   :: EParser Exts.Type
+parseDecl   :: EParser Exts.Decl
+parseStmt   :: EParser Exts.Stmt
+parseModule = extsParse
+parseExp    = extsParse
+parsePat    = extsParse
+parseType   = extsParse
+parseDecl   = extsParse
+-- HSE Bug??
+parseStmt   = mapRight deLoc . Meta.parseResultToEither . Exts.parseStmtWithMode parseMode
+
+--TODO: Consider making these "Parseable" instances
+--TODO: Doing better than this would require exposing more parsers from HSE
+
+parseModuleName :: EParser Exts.ModuleName
+parseModuleName = getByType <=< parseModule . ("module " ++ ) . ( ++ " where\n")
+
+parseDecls :: EParser [Exts.Decl]
+parseDecls = getByType <=< parseModule . ("module M where\n" ++ )
+
+parseQName :: EParser Exts.QName
+parseQName = getByType <=< parseExp
+
+parseName :: EParser Exts.Name
+parseName = getByType <=< parseQName
+
+parseCons :: EParser [Exts.QualConDecl]
+parseCons = getByType <=< expectSingle <=< parseDecls . ("data X = " ++ )
+
+parseCon :: EParser Exts.QualConDecl
+parseCon = expectSingle <=< parseCons
+
+parseField :: EParser ([Exts.Name], Exts.BangType)
+parseField = expectSingle <=< parseFields . ("{ " ++ ) . ( ++ " }")
+
+parseFields :: EParser [([Exts.Name], Exts.BangType)]
+parseFields input = do
+  let preprocessed = "X " ++ input
+  con <- getByType =<< parseCon preprocessed
+  case con of
+    Exts.RecDecl _ fs -> Right fs
+    _ -> Left $ "Expected record syntax, but got " ++ preprocessed
+
+getByType :: forall a b. (Show a, Data a, Data b) => a -> Either String b
+getByType x =
+  case gfindtype x of
+    Just found -> Right found
+    Nothing -> Left $
+      "Failed to find just one " ++ show (typeOf (undefined :: b)) ++
+      " in the immediate fields of " ++ show x
+
+expectSingle :: Show a => [a] -> Either String a
+expectSingle [x] = Right x
+expectSingle xs = Left $ "Expected a single value, but got " ++ show xs
+
+parseThExp :: EParser TH.Exp
+parseThExp = mapRight Meta.toExp . parseExp
+{-
+parseThPat :: EParser TH.Pat
+parseThPat = mapRight Meta.toPat  . parsePat
+parseThType :: EParser TH.Type
+parseThType = mapRight Meta.toType . parseType
+parseThDecs :: EParser [TH.Dec]
+parseThDecs = mapRight Meta.toDecs . parseDecs
+-}
+
 
 mapBoth :: (a -> c) -> (b -> d) -> Either a b -> Either c d
 mapBoth f g = either (Left . f) (Right . g)
@@ -278,27 +374,15 @@ $(TH.deriveLiftMany
 
 --------------------------------------------------------------------------------
 -- Convenience conversion instances
--- Note that the commented out stuff refers to TH types because this code comes
--- from quasi-extras, and used to be used for TH AST quoting.
 
-{-
-class ToBody     a where toBody     :: a -> Body
-class ToStmt     a where toStmt     :: a -> Stmt
-class ToMatch    a where toMatch    :: a -> Match
-class ToGuard    a where toGuard    :: a -> Guard
-class ToTyVarBndr a where toTyVarBndr :: a -> TyVarBndr
--}
-
-instance ToExp   Exts.Exp   where toExp   = id
-instance ToPat   Exts.Pat   where toPat   = id
-instance ToType  Exts.Type  where toType  = id
-instance ToDecl  Exts.Decl  where toDecl  = id
-{-
-instance ToBody  Body  where toBody  = id
-instance ToStmt  Stmt  where toStmt  = id
-instance ToMatch Match where toMatch = id
-instance ToGuard Guard where toGuard = id
--}
+instance ToExp         Exts.Exp           where toExp         = id
+instance ToPat         Exts.Pat           where toPat         = id
+instance ToType        Exts.Type          where toType        = id
+instance ToDecl        Exts.Decl          where toDecl        = id
+instance ToQName       Exts.QName         where toQName       = id
+instance ToName        Exts.Name          where toName        = id
+instance ToModuleName  Exts.ModuleName    where toModuleName  = id
+instance ToCons        [Exts.QualConDecl] where toCons        = id
 
 isConName :: Exts.Name -> Bool
 isConName (Exts.Ident n) = isUpper $ head n
@@ -317,29 +401,55 @@ ifConQ f _ qn@(Exts.Special _) = f qn
 
 --NOTE: this ToPat sucks for constructors..
 
-instance ToExp       Exts.QName where toExp       = ifConQ Exts.Con Exts.Var
-instance ToPat       Exts.QName where toPat       = ifCon (`Exts.PApp` []) Exts.PVar
-instance ToType      Exts.QName where toType      = ifCon Exts.TyCon Exts.TyVar
+instance ToExp  Exts.QName where toExp  = ifConQ Exts.Con Exts.Var
+instance ToPat  Exts.QName where toPat  = ifCon (`Exts.PApp` []) Exts.PVar
+instance ToType Exts.QName where toType = ifCon Exts.TyCon Exts.TyVar
+
+instance ToExp  Exts.Name where toExp  = toExp  . Exts.UnQual
+instance ToPat  Exts.Name where toPat  = toPat  . Exts.UnQual
+instance ToType Exts.Name where toType = toType . Exts.UnQual
+
+instance ToExp        String where toExp   = toExp       . Exts.name
+instance ToPat        String where toPat   = toPat       . Exts.name
+instance ToType       String where toType  = toType      . Exts.name
+instance ToQName      String where toQName = Exts.UnQual . Exts.name
+instance ToName       String where toName  =               Exts.name
+instance ToModuleName String where toModuleName = Exts.ModuleName
+instance ToCons       String where
+  toCons n =
+    [ Exts.QualConDecl Exts.noLoc [] [] (Exts.ConDecl (Exts.name n) []) ]
+
+instance ToExp        Text where toExp        = toExp        . unpack
+instance ToPat        Text where toPat        = toPat        . unpack
+instance ToType       Text where toType       = toType       . unpack
+instance ToQName      Text where toQName      = toQName      . unpack
+instance ToName       Text where toName       = toName       . unpack
+instance ToModuleName Text where toModuleName = toModuleName . unpack
+instance ToCons       Text where toCons       = toCons       . unpack
+
 {-
+-- this code comes from quasi-extras, and used to be used for TH AST quoting, so
+-- these refer to TH types.  Stuff liek this might be useful in the future.
+
+class ToBody     a where toBody     :: a -> Body
+class ToStmt     a where toStmt     :: a -> Stmt
+class ToMatch    a where toMatch    :: a -> Match
+class ToGuard    a where toGuard    :: a -> Guard
+class ToTyVarBndr a where toTyVarBndr :: a -> TyVarBndr
+
+instance ToBody  Body  where toBody  = id
+instance ToStmt  Stmt  where toStmt  = id
+instance ToMatch Match where toMatch = id
+instance ToGuard Guard where toGuard = id
+
 instance ToBody      Exts.QName where toBody      = toBody . toExp
 instance ToStmt      Exts.QName where toStmt      = toStmt . toExp
 instance ToTyVarBndr Exts.QName where toTyVarBndr = PlainTV
--}
 
-instance ToExp       Exts.Name where toExp       = toExp  . Exts.UnQual
-instance ToPat       Exts.Name where toPat       = toPat  . Exts.UnQual
-instance ToType      Exts.Name where toType      = toType . Exts.UnQual
-
-instance ToExp       String where toExp       = toExp       . Exts.name
-instance ToPat       String where toPat       = toPat       . Exts.name
-instance ToType      String where toType      = toType      . Exts.name
-{-
 instance ToBody      String where toBody      = toBody      . Exts.name
 instance ToStmt      String where toStmt      = toStmt      . Exts.name
 instance ToTyVarBndr String where toTyVarBndr = toTyVarBndr . Exts.name
--}
 
-{-
 instance ToBody Exp            where toBody = NormalB
 --TODO: good idea?
 instance ToBody [(Guard, Exp)] where toBody = GuardedB

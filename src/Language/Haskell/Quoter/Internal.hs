@@ -8,7 +8,7 @@ module Language.Haskell.Quoter.Internal
 import Control.Applicative        ( (<$>), (<*>) )
 import Control.Monad.Trans.Class  ( lift )
 import Control.Monad.Trans.Either ( EitherT(..), hoistEither )
-import Data.Char                  ( isSpace )
+import Data.Char                  ( isSpace, toLower )
 import Data.Either                ( rights )
 import Data.Generics              ( Data, extT, extQ, everywhereBut, everywhere' )
 import Data.List                  ( isPrefixOf, stripPrefix, tails )
@@ -92,7 +92,7 @@ astQuoter antiquotes name parser =
     spliced <- substSplices fst ast_p splice_p chunks
     return $ if null free
              then spliced
-             else TH.LamE (map (TH.VarP . TH.mkName) free) spliced
+             else TH.LamE (map (TH.VarP . TH.mkName . decapitalize) free) spliced
    where
     ast_p code
       = parse_ast ({- fmap debug . -} TH.lift)
@@ -170,6 +170,10 @@ mapLeft  f = mapBoth f id
 mapRight :: (b -> d) -> Either a b -> Either a d
 mapRight f = mapBoth id f
 
+decapitalize :: String -> String
+decapitalize "" = ""
+decapitalize (x:xs) = toLower x : xs
+
 -- Quote Parser
 
 parseChunks
@@ -192,7 +196,7 @@ parseChunks qq input = do
   isEmpty = either (const False) (null . filter (not . isSpace) . snd)
 
   processEmpty s@(Right (n, _))
-    | isEmpty s = Right (n, n)
+    | isEmpty s = Right (n, decapitalize n)
     | otherwise = s
   processEmpty x = x
 

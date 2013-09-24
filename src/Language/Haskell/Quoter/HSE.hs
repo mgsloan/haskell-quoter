@@ -25,8 +25,9 @@ module Language.Haskell.Quoter.HSE
   qGadtDecls, qClassDecl, qClassDecls, qInstDecl, qInstDecls, qBangType, qRhs,
   qGuardedRhs, qGuardedRhss, qTyVarBind, qTyVarBinds, qKind, qFunDep, qFunDeps,
   qLiteral, qXName, qSafety, qCallConv, qModulePragma, qModulePragmas,
-  qActivation, qRule, qRules, qRuleVar, qRuleVars, qQualStmt, qQualStmts, qAlt,
-  qGuardedAlt, qGuardedAlts, qQName, qQNames, qName, qNames,
+  qActivation, qRule, qRules, qRuleVar, qRuleVars, qQualStmt, qQualStmts,
+  qParQualStmts, qAlt, qGuardedAlt, qGuardedAlts, qQName, qQNames, qName,
+  qNames,
   -- * Utilities
   stringLit,
   -- * Conversion Utilities
@@ -73,8 +74,10 @@ qModule, qExp, qExps, qPat, qPats, qType, qDecl, qDecls, qStmt, qStmts,
   qGadtDecls, qClassDecl, qClassDecls, qInstDecl, qInstDecls, qBangType, qRhs,
   qGuardedRhs, qGuardedRhss, qTyVarBind, qTyVarBinds, qKind, qFunDep, qFunDeps,
   qLiteral, qXName, qSafety, qCallConv, qModulePragma, qModulePragmas,
-  qActivation, qRule, qRules, qRuleVar, qRuleVars, qQualStmt, qQualStmts, qAlt,
-  qGuardedAlt, qGuardedAlts, qQName, qQNames, qName, qNames :: TH.QuasiQuoter
+  qActivation, qRule, qRules, qRuleVar, qRuleVars, qQualStmt, qQualStmts,
+  qParQualStmts, qAlt, qGuardedAlt, qGuardedAlts, qQName, qQNames, qName,
+  qNames
+  :: TH.QuasiQuoter
 
 qModule         = extsQuoter "qModule"         (extsParse :: EParser Exts.Module)
 qExp            = extsQuoter "qExp"            (extsParse :: EParser Exts.Exp)
@@ -139,6 +142,7 @@ qRuleVar        = extsQuoter "qRuleVar"        (extsParse :: EParser Exts.RuleVa
 qRuleVars       = extsQuoter "qRuleVars"       (extsParse :: EParser [Exts.RuleVar])
 qQualStmt       = extsQuoter "qQualStmt"       (extsParse :: EParser Exts.QualStmt)
 qQualStmts      = extsQuoter "qQualStmts"      (extsParse :: EParser [Exts.QualStmt])
+qParQualStmts   = extsQuoter "qParQualStmts"   (extsParse :: EParser [[Exts.QualStmt]])
 qAlt            = extsQuoter "qAlt"            (extsParse :: EParser Exts.Alt)
 qGuardedAlt     = extsQuoter "qGuardedAlt"     (extsParse :: EParser Exts.GuardedAlt)
 qGuardedAlts    = extsQuoter "qGuardedAlts"    (extsParse :: EParser Exts.GuardedAlts)
@@ -200,6 +204,7 @@ antiquotes pun =
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.Rule])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.RuleVar])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.QualStmt])
+  , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [[Exts.QualStmt]])
   ]
 
 --TODO: make this unnecessary.

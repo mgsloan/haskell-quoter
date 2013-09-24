@@ -8,6 +8,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Language.Haskell.Quoter.HSE
   (
@@ -38,7 +39,7 @@ module Language.Haskell.Quoter.HSE
 
 import Control.Applicative        ( (<$>) )
 import Data.Char                  ( isUpper )
-import Data.Text                  ( Text, unpack )
+import Data.Text                  ( Text, pack, unpack, splitOn, intercalate )
 
 import Language.Haskell.Quoter.Internal (astQuoter, extsParse, EError, EParser)
 
@@ -163,7 +164,7 @@ antiquotes pun =
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError Exts.Annotation)
   , fmap ('fromName, ) . TH.lift <$> (extsParse pun :: EError Exts.IPName)
   , fmap ('fromName, ) . TH.lift <$> (extsParse pun :: EError Exts.QOp)
-  , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError Exts.ExportSpec)
+  , fmap ('fromName, ) . TH.lift <$> (extsParse pun :: EError Exts.ExportSpec)
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError Exts.ImportSpec)
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError Exts.Binds)
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError Exts.ConDecl)
@@ -219,6 +220,8 @@ instance ToPat         Exts.Pat           where toPat         = id
 instance ToType        Exts.Type          where toType        = id
 instance ToDecl        Exts.Decl          where toDecl        = id
 
+--TODO: How do we work in validation, failure and such?
+
 isConName :: Exts.Name -> Bool
 isConName (Exts.Ident n) = isUpper $ head n
 isConName (Exts.Symbol (':':_)) = True
@@ -234,6 +237,15 @@ ifConQ f g qn@(Exts.Qual _ n) = if isConName n then f qn else g qn
 ifConQ f g qn@(Exts.UnQual n) = if isConName n then f qn else g qn
 ifConQ f _ qn@(Exts.Special _) = f qn
 
+qname :: Text -> Exts.QName
+qname qn
+    | null prefix = Exts.UnQual suffix
+    | otherwise = Exts.Qual (Exts.ModuleName prefix) suffix
+  where
+    components = splitOn "." qn
+    prefix = unpack . intercalate "." $ init components
+    suffix = Exts.name . unpack $ last components
+
 --NOTE: this ToPat sucks for constructors..
 
 instance ToExp  Exts.QName where toExp  = ifConQ Exts.Con Exts.Var
@@ -244,22 +256,26 @@ instance ToExp  Exts.Name where toExp  = toExp  . Exts.UnQual
 instance ToPat  Exts.Name where toPat  = toPat  . Exts.UnQual
 instance ToType Exts.Name where toType = toType . Exts.UnQual
 
-instance ToExp  String where toExp  = toExp  . Exts.name
-instance ToPat  String where toPat  = toPat  . Exts.name
-instance ToType String where toType = toType . Exts.name
+instance ToExp  String where toExp  = toExp  . qname . pack
+instance ToPat  String where toPat  = toPat  . qname . pack
+instance ToType String where toType = toType . qname . pack
 
-instance ToExp  Text where toExp  = toExp  . unpack
-instance ToPat  Text where toPat  = toPat  . unpack
-instance ToType Text where toType = toType . unpack
+instance ToExp  Text where toExp  = toExp  . qname
+instance ToPat  Text where toPat  = toPat  . qname
+instance ToType Text where toType = toType . qname
 
-instance FromName String Exts.QName      where fromName = Exts.UnQual . Exts.name
-instance FromName String Exts.Name       where fromName =               Exts.name
+instance FromName String Exts.QName      where fromName = qname . pack
+instance FromName String Exts.Name       where fromName = Exts.name
 instance FromName String Exts.ModuleName where fromName = Exts.ModuleName
+
+instance FromName String Exts.ExportSpec where
+  fromName = ifConQ Exts.EAbs Exts.EVar . qname . pack
 
 instance FromName String Exts.QualConDecl where
   fromName n =
     Exts.QualConDecl Exts.noLoc [] [] (Exts.ConDecl (Exts.name n) [])
 
+--FIXME
 -- Undecidable instances
 instance FromName a a where fromName = id
 instance FromName String a => FromName Text a where fromName = fromName . unpack

@@ -16,16 +16,16 @@ module Language.Haskell.Quoter.HSE
   qe, qp, qt, qd,
   -- * AST Quaiquoters
   -- | Each 'QuasiQuoter' can be used to generate Haskell expressions.
-  qModule, qExp, qPat, qType, qDecl, qDecls, qStmt, qStmts, qQualConDecl,
-  qQualConDecls, qField, qFields, qModuleName, qModuleHead, qAnnotation,
-  qIPName, qQOp, qOp, qOps, qCName, qCNames, qExportSpecList, qExportSpec,
-  qImportDecl, qImportDecls, qImportSpecList, qImportSpec, qBinds, qIPBind,
-  qIPBinds, qConDecl, qFieldDecl, qFieldDecls, qGadtDecl, qGadtDecls,
-  qClassDecl, qClassDecls, qInstDecl, qInstDecls, qBangType, qRhs, qGuardedRhs,
-  qGuardedRhss, qTyVarBind, qTyVarBinds, qKind, qFunDep, qFunDeps, qLiteral,
-  qXName, qSafety, qCallConv, qModulePragma, qModulePragmas, qActivation, qRule,
-  qRules, qRuleVar, qRuleVars, qQualStmt, qQualStmts, qAlt, qGuardedAlt,
-  qGuardedAlts, qQName, qQNames, qName, qNames,
+  qModule, qExp, qExps, qPat, qPats, qType, qDecl, qDecls, qStmt, qStmts,
+  qQualConDecl,   qQualConDecls, qField, qFields, qModuleName, qModuleHead,
+  qAnnotation,   qIPName, qQOp, qOp, qOps, qCName, qCNames, qExportSpecList,
+  qExportSpec,   qImportDecl, qImportDecls, qImportSpecList, qImportSpec,
+  qBinds, qIPBind, qIPBinds, qConDecl, qFieldDecl, qFieldDecls, qGadtDecl,
+  qGadtDecls, qClassDecl, qClassDecls, qInstDecl, qInstDecls, qBangType, qRhs,
+  qGuardedRhs, qGuardedRhss, qTyVarBind, qTyVarBinds, qKind, qFunDep, qFunDeps,
+  qLiteral, qXName, qSafety, qCallConv, qModulePragma, qModulePragmas,
+  qActivation, qRule, qRules, qRuleVar, qRuleVars, qQualStmt, qQualStmts, qAlt,
+  qGuardedAlt, qGuardedAlts, qQName, qQNames, qName, qNames,
   -- * Conversion Utilities
   -- | These utilities are inserted to make splicing expressions, patterns,
   --   types and names more convenient.
@@ -62,20 +62,22 @@ qd = extsQuoter "qd" (extsParse :: EParser [Exts.Decl])
 
 -- Quasi-quoters for other types
 
-qModule, qExp, qPat, qType, qDecl, qDecls, qStmt, qStmts, qQualConDecl,
-  qQualConDecls, qField, qFields, qModuleName, qModuleHead, qAnnotation,
-  qIPName, qQOp, qOp, qOps, qCName, qCNames, qExportSpecList, qExportSpec,
-  qImportDecl, qImportDecls, qImportSpecList, qImportSpec, qBinds, qIPBind,
-  qIPBinds, qConDecl, qFieldDecl, qFieldDecls, qGadtDecl, qGadtDecls,
-  qClassDecl, qClassDecls, qInstDecl, qInstDecls, qBangType, qRhs, qGuardedRhs,
-  qGuardedRhss, qTyVarBind, qTyVarBinds, qKind, qFunDep, qFunDeps, qLiteral,
-  qXName, qSafety, qCallConv, qModulePragma, qModulePragmas, qActivation, qRule,
-  qRules, qRuleVar, qRuleVars, qQualStmt, qQualStmts, qAlt, qGuardedAlt,
-  qGuardedAlts, qQName, qQNames, qName, qNames :: TH.QuasiQuoter
+qModule, qExp, qExps, qPat, qPats, qType, qDecl, qDecls, qStmt, qStmts,
+  qQualConDecl,   qQualConDecls, qField, qFields, qModuleName, qModuleHead,
+  qAnnotation,   qIPName, qQOp, qOp, qOps, qCName, qCNames, qExportSpecList,
+  qExportSpec,   qImportDecl, qImportDecls, qImportSpecList, qImportSpec,
+  qBinds, qIPBind, qIPBinds, qConDecl, qFieldDecl, qFieldDecls, qGadtDecl,
+  qGadtDecls, qClassDecl, qClassDecls, qInstDecl, qInstDecls, qBangType, qRhs,
+  qGuardedRhs, qGuardedRhss, qTyVarBind, qTyVarBinds, qKind, qFunDep, qFunDeps,
+  qLiteral, qXName, qSafety, qCallConv, qModulePragma, qModulePragmas,
+  qActivation, qRule, qRules, qRuleVar, qRuleVars, qQualStmt, qQualStmts, qAlt,
+  qGuardedAlt, qGuardedAlts, qQName, qQNames, qName, qNames :: TH.QuasiQuoter
 
 qModule         = extsQuoter "qModule"         (extsParse :: EParser Exts.Module)
 qExp            = extsQuoter "qExp"            (extsParse :: EParser Exts.Exp)
+qExps           = extsQuoter "qExps"           (extsParse :: EParser [Exts.Exp])
 qPat            = extsQuoter "qPat"            (extsParse :: EParser Exts.Pat)
+qPats           = extsQuoter "qPats"           (extsParse :: EParser [Exts.Pat])
 qType           = extsQuoter "qType"           (extsParse :: EParser Exts.Type)
 qDecl           = extsQuoter "qDecl"           (extsParse :: EParser Exts.Decl)
 qDecls          = extsQuoter "qDecls"          (extsParse :: EParser [Exts.Decl])
@@ -176,8 +178,9 @@ antiquotes pun =
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError Exts.GuardedAlts)
   , fmap ('fromName, ) . TH.lift <$> (extsParse pun :: EError [Exts.QualConDecl])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [FieldDecl])
+  , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.Exp])
+  , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.Pat])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.Decl])
-  , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.Stmt])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.Stmt])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.Op])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.CName])

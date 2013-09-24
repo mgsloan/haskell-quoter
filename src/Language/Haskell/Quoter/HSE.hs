@@ -26,6 +26,8 @@ module Language.Haskell.Quoter.HSE
   qLiteral, qXName, qSafety, qCallConv, qModulePragma, qModulePragmas,
   qActivation, qRule, qRules, qRuleVar, qRuleVars, qQualStmt, qQualStmts, qAlt,
   qGuardedAlt, qGuardedAlts, qQName, qQNames, qName, qNames,
+  -- * Utilities
+  stringLit,
   -- * Conversion Utilities
   -- | These utilities are inserted to make splicing expressions, patterns,
   --   types and names more convenient.
@@ -198,6 +200,10 @@ antiquotes pun =
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.RuleVar])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.QualStmt])
   ]
+
+--TODO: make this unnecessary.
+stringLit :: String -> Exts.Exp
+stringLit = Exts.Lit . Exts.String
 
 --------------------------------------------------------------------------------
 -- Convenience conversion instances

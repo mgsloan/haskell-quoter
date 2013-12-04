@@ -2,8 +2,10 @@ module-template: ! 'module MODULE_NAME where
 
 '
 extensions: {}
-environment: null
+environment: default
 cabal-file: project.cabal
+hidden-packages: EitherT
 version: 1
+extra-packages: ''
 ghc-args: []
 excluded-modules: []

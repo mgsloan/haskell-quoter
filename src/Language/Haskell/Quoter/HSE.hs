@@ -67,9 +67,9 @@ qd = extsQuoter "qd" (extsParse :: EParser [Exts.Decl])
 -- Quasi-quoters for other types
 
 qModule, qExp, qExps, qPat, qPats, qType, qDecl, qDecls, qStmt, qStmts,
-  qQualConDecl,   qQualConDecls, qField, qFields, qModuleName, qModuleHead,
-  qAnnotation,   qIPName, qQOp, qOp, qOps, qCName, qCNames, qExportSpecList,
-  qExportSpec,   qImportDecl, qImportDecls, qImportSpecList, qImportSpec,
+  qQualConDecl, qQualConDecls, qField, qFields, qModuleName, qModuleHead,
+  qAnnotation, qIPName, qQOp, qOp, qOps, qCName, qCNames, qExportSpecList,
+  qExportSpec, qImportDecl, qImportDecls, qImportSpecList, qImportSpec,
   qBinds, qIPBind, qIPBinds, qConDecl, qFieldDecl, qFieldDecls, qGadtDecl,
   qGadtDecls, qClassDecl, qClassDecls, qInstDecl, qInstDecls, qBangType, qRhs,
   qGuardedRhs, qGuardedRhss, qTyVarBind, qTyVarBinds, qKind, qFunDep, qFunDeps,

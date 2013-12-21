@@ -31,7 +31,7 @@ library
                  , containers
                  , either
                  -- https://github.com/haskell-suite/haskell-src-exts/pull/54
-                 , haskell-src-exts >= 1.15
+                 , haskell-src-exts >= 1.14
                  , haskell-src-meta >= 0.6
                  , parsec
                  , syb

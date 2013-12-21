@@ -191,7 +191,7 @@ antiquotes pun =
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.Stmt])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.Op])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.CName])
-  , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.ExportSpec])
+  , fmap ('fromName, ) . TH.lift <$> (extsParse pun :: EError [Exts.ExportSpec])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.ImportDecl])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.IPBind])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.GadtDecl])
@@ -206,6 +206,18 @@ antiquotes pun =
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [Exts.QualStmt])
   , fmap ('id, )       . TH.lift <$> (extsParse pun :: EError [[Exts.QualStmt]])
   ]
+
+--TODO: type lits?
+
+{- Gross!
+qlift :: TH.Lift a => a -> TH.Q Exts.Exp
+qlift x = do
+    code <- TH.pprint <$> TH.lift x
+    case extsParse code of
+      Left err -> fail $
+        "Unexpected parse error in TH lift: " ++ err ++ "\nIn this:\n" ++ code
+      Right e -> return e
+-}
 
 --TODO: make this unnecessary.
 stringLit :: String -> Exts.Exp

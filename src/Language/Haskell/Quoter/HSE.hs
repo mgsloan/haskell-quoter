@@ -11,6 +11,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Language.Haskell.Quoter.HSE
+    () where
+{-
   (
   -- * Short quasiquoters
   -- | These mimic the ast quoters used for TH.
@@ -373,3 +375,4 @@ $(TH.deriveLiftMany
 -- , ''Exts.DeclHead
 -- , ''Exts.InstHead
 -- , ''Exts.FieldDecl
+-}

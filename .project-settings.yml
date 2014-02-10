@@ -2,15 +2,13 @@ module-template: ! 'module MODULE_NAME where
 
 '
 extensions: {}
-environment: ghc-7.4.2-stable-13.09
+environment: default
 cabal-file: project.cabal
-hidden-packages: ''
+hidden-packages: EitherT
 version: 1
 extra-packages: ! 'cpphs-1.17.1
 
   git: git@github.com:mgsloan/haskell-src-exts.git 46-more-parsers
-
-  git: git@github.com:mgsloan/th-lift.git master
 
   th-orphans-0.8
 

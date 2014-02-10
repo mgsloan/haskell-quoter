@@ -2,6 +2,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Language.Haskell.Quoter.Internal
+    () where
+{-
   ( astQuoter, extsParse, EParser, EError
   ) where
 
@@ -50,7 +52,7 @@ type ErrorQ = EitherT String TH.Q
 --   function that is used to implement @e'@, @p'@, @t'@, and @d'@.
 astQuoter :: forall a. TH.Lift a
           => (String -> [EError (TH.Q (TH.Name, TH.Exp))])
-          -> String
+          -> Strin  g
           -> EParser a
           -> TH.QuasiQuoter
 astQuoter antiquotes name parser =
@@ -244,15 +246,6 @@ spliceParser parse_splice = do
         (Left  [c], Left  acc:rs) -> return $ Left  (c:acc) : rs
         _ -> return $ s : rest
 
-{-
--- The same splice style as TH ast quoters.
-thSplice :: Parsec String () (Maybe String, String)
-thSplice = do
-  _ <- try $ string "$("
-  fancySplice (concat <$> nestParser (delimParser '(' ')')
-                                     [try $ char ')' >> return ""])
--}
-
 -- To be passed as the first parameter to parseSplices or spliceParser.
 curlySplice :: Parsec String () (Maybe String, String)
 curlySplice = do
@@ -339,3 +332,4 @@ generateNames prefix input =
              | t <- tails input
              , prefix `isPrefixOf` t
              ]
+-}
